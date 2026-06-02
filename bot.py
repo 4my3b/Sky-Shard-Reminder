@@ -17,8 +17,6 @@ PST = ZoneInfo("America/Los_Angeles")
 # YOUR PREDICTOR DATA
 # =========================
 
-REFERENCE_DATE = datetime(2026, 5, 16, tzinfo=PST).date()
-
 MONTH_PATTERN = [2, 1, 3, 0, 4, 1, 2, 0, 3, 1, 4, 0]
 
 EVENT_CATEGORY = {
@@ -150,8 +148,7 @@ OCCURRENCES = {
 }
 
 def get_area(target_date):
-    delta_days = (target_date - REFERENCE_DATE).days
-    return ((delta_days % 5) + 1)
+    return ((target_date.day - 1) % 5) + 1
 
 def get_event_group(target_date):
     day_index = target_date.day - 1
@@ -212,8 +209,11 @@ def print_event_info(target_date):
 sent_occurrences = set()
 finished_occurrences = set()
 
-def generate_message(highlight_occurrence=None):
-    today = datetime.now(PST).date()
+def generate_message(highlight_occurrence=None,target_date=None):
+    if target_date is None:
+        target_date = datetime.now(PST).date()
+
+    today = target_date
 
     area = get_area(today)
     event_group = get_event_group(today)
@@ -285,6 +285,16 @@ def generate_message(highlight_occurrence=None):
 
     return message
 
+def validate_date(day, month, year):
+    try:
+        return datetime(
+            year,
+            month,
+            day
+        ).date()
+    except ValueError:
+        return None
+
 # =========================
 # DISCORD BOT
 # =========================
@@ -343,7 +353,7 @@ async def setchannel(
         f"Shard announcements will now be sent in {channel.mention}"
     )
 
-
+#Shard Today
 @tree.command(
     name="shardtoday",
     description="Show today's shard info"
@@ -351,6 +361,39 @@ async def setchannel(
 async def shardtoday(interaction: discord.Interaction):
     await interaction.response.send_message(generate_message())
 
+# Predict Shard
+@tree.command(
+    name="predictshard",
+    description="Predict shard information for any date"
+)
+@app_commands.describe(
+    day="Day",
+    month="Month",
+    year="Year"
+)
+async def predictshard(
+    interaction: discord.Interaction,
+    day: app_commands.Range[int, 1, 31],
+    month: app_commands.Range[int, 1, 12],
+    year: app_commands.Range[int, 2020, 2035]
+):
+    target_date = validate_date(
+        day,
+        month,
+        year
+    )
+
+    if target_date is None:
+        await interaction.response.send_message(
+            "That date does not exist."
+        )
+        return
+
+    await interaction.response.send_message(
+        generate_message(
+            target_date=target_date
+        )
+    )
 
 @tasks.loop(minutes=1)
 async def daily_reset():
