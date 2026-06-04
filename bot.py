@@ -517,7 +517,9 @@ async def predictshard(
         )
     )
 
-@tasks.loop(time=time(hour=0, minute=45, second=0, tzinfo=PST))
+DAILY_RESET_TIME = time(hour=8, minute=55, second=0)  # no tzinfo
+
+@tasks.loop(time=DAILY_RESET_TIME)
 async def daily_reset():
     data = load_channels()
 
