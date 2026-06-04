@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 import json
 from discord import app_commands
+from typing import Optional
 
 load_dotenv()
 
@@ -209,7 +210,14 @@ def print_event_info(target_date):
 sent_occurrences = set()
 finished_occurrences = set()
 
-def generate_message(highlight_occurrence=None,target_date=None):
+def format_sky_date(target_date):
+    return (
+        f"{target_date.strftime('%A')}, "
+        f"{ordinal(target_date.day)} "
+        f"{target_date.strftime('%B %Y')}"
+    )
+
+def generate_message(highlight_occurrence=None,target_date=None,prediction_mode=False):
     if target_date is None:
         target_date = datetime.now(PST).date()
 
@@ -224,10 +232,32 @@ def generate_message(highlight_occurrence=None,target_date=None):
         f"{today.strftime('%B %Y')}"
     )
 
+    if prediction_mode:
+        header = (
+            f"Predicted Shard\n"
+            f"(Based on Sky Time (America/Los Angeles))\n"
+            f"(Sky Date: {formatted_date})"
+        )
+    else:
+        header = (
+            f"Today's Shard\n"
+            f"(Sky Date: {formatted_date})"
+        )
+
     if not has_event(today, event_group):
+
+        if prediction_mode:
+            return (
+                f"Predicted Shard\n"
+                f"(Based on Sky Time (America/Los Angeles))\n"
+                f"(Sky Date: {formatted_date})\n\n"
+                f"No shard."
+            )
+
         return (
-            f"{formatted_date}\n"
-            f"No shard event today."
+            f"Today's Shard\n"
+            f"(Sky Date: {formatted_date})\n\n"
+            f"No shard."
         )
 
     category = EVENT_CATEGORY[event_group]
@@ -236,7 +266,7 @@ def generate_message(highlight_occurrence=None,target_date=None):
     area_name = AREA_NAMES[area]
 
     message = (
-        f"{formatted_date}\n\n"
+        f"{header}\n\n"
         f"{category} in {subarea} ({area_name})\n\n"
         f"Rewards: {reward}\n\n"
     )
@@ -294,6 +324,28 @@ def validate_date(day, month, year):
         ).date()
     except ValueError:
         return None
+
+def get_shard_summary(target_date):
+    area = get_area(target_date)
+    event_group = get_event_group(target_date)
+
+    formatted_date = (
+        f"{target_date.strftime('%A')}, "
+        f"{ordinal(target_date.day)} "
+        f"{target_date.strftime('%B %Y')}"
+    )
+
+    if not has_event(target_date, event_group):
+        return f"{formatted_date}: No shard"
+
+    category = EVENT_CATEGORY[event_group]
+    subarea = SUBAREAS[area][event_group]
+    area_name = AREA_NAMES[area]
+
+    return (
+        f"{formatted_date}: "
+        f"{category} in {subarea} ({area_name})"
+    )
 
 # =========================
 # DISCORD BOT
@@ -359,7 +411,74 @@ async def setchannel(
     description="Show today's shard info"
 )
 async def shardtoday(interaction: discord.Interaction):
-    await interaction.response.send_message(generate_message())
+    await interaction.response.defer()
+
+    await interaction.followup.send(
+        generate_message()
+    )
+
+@tree.command(
+    name="predict_n_days",
+    description="Predict upcoming shard days"
+)
+async def predict_n_days(
+    interaction: discord.Interaction,
+    days: Optional[int] = 3
+):
+    if days < 1:
+        await interaction.response.send_message(
+            "Number of days must be at least 1."
+        )
+        return
+
+    if days > 30:
+        await interaction.response.send_message(
+            "Maximum is 30 days."
+        )
+        return
+
+    today = datetime.now(PST).date()
+
+    lines = []
+
+    for i in range(days):
+
+        target_date = today + timedelta(days=i)
+
+        area = get_area(target_date)
+        event_group = get_event_group(target_date)
+
+        if i == 0:
+            header = (
+                f"Today "
+                f"(Sky Date: {format_sky_date(target_date)})"
+            )
+        else:
+            header = format_sky_date(target_date)
+
+        if not has_event(target_date, event_group):
+            lines.append(
+                f"{header}\n"
+                f"No shard"
+            )
+            continue
+
+        category = EVENT_CATEGORY[event_group]
+        subarea = SUBAREAS[area][event_group]
+        area_name = AREA_NAMES[area]
+
+        lines.append(
+            f"{header}\n"
+            f"{category} in {subarea} ({area_name})"
+        )
+
+    message = (
+        f"{days}-Day Shard Forecast\n"
+        f"(Based on Sky Time (America/Los Angeles))\n\n"
+        + "\n\n".join(lines)
+    )
+
+    await interaction.response.send_message(message)
 
 # Predict Shard
 @tree.command(
@@ -391,7 +510,8 @@ async def predictshard(
 
     await interaction.response.send_message(
         generate_message(
-            target_date=target_date
+            target_date=target_date,
+            prediction_mode=True
         )
     )
 
