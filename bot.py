@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
 import discord
 from discord.ext import tasks
@@ -382,8 +382,10 @@ async def on_ready():
     except Exception as e:
         print(e)
 
-    daily_reset.start()
-    occurrence_tracker.start()
+    if not daily_reset.is_running():
+        daily_reset.start()
+    if not occurrence_tracker.is_running():
+        occurrence_tracker.start()
 
 
 @tree.command(
@@ -515,25 +517,24 @@ async def predictshard(
         )
     )
 
-@tasks.loop(minutes=1)
+@tasks.loop(time=time(hour=0, minute=45, second=0, tzinfo=PST))
 async def daily_reset():
-    now = datetime.now(PST)
+    data = load_channels()
 
-    if now.hour == 0 and now.minute == 0:
+    for guild_id, channel_id in data.items():
+        channel = client.get_channel(channel_id)
 
-        data = load_channels()
+        if channel is None:
+            try:
+                channel = await client.fetch_channel(channel_id)
+            except Exception as e:
+                print(f"Could not fetch channel {channel_id}: {e}")
+                continue
 
-        for guild_id, channel_id in data.items():
-
-            channel = client.get_channel(channel_id)
-
-            if channel:
-                try:
-                    await channel.send(generate_message())
-                except Exception as e:
-                    print(
-                        f"Failed sending to {channel_id}: {e}"
-                    )
+        try:
+            await channel.send(generate_message())
+        except Exception as e:
+            print(f"Failed sending to {channel_id}: {e}")
 
 @tasks.loop(seconds=30)
 async def occurrence_tracker():
